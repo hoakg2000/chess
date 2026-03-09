@@ -1,5 +1,5 @@
-import { BrainCircuit, ChevronLeft, ChevronRight, FastForward, Rewind, Play, Loader2 } from 'lucide-react';
-import { ResponsiveContainer, LineChart, Line, YAxis, ReferenceLine, Tooltip, AreaChart, Area } from 'recharts';
+import { ChevronLeft, ChevronRight, FastForward, Rewind, Play, Loader2 } from 'lucide-react';
+import { ResponsiveContainer, YAxis, ReferenceLine, Tooltip, AreaChart, Area } from 'recharts';
 
 
 export interface GameMove {
@@ -203,7 +203,7 @@ export default function AnalysisPanel({
               margin={{ top: 5, right: 0, left: 0, bottom: 0 }}
               onClick={(e) => {
                 if (e && e.activeTooltipIndex !== undefined) {
-                  onJumpToMove(e.activeTooltipIndex);
+                  onJumpToMove(e.activeTooltipIndex as number);
                 }
               }}
             >

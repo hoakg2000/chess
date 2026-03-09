@@ -1,4 +1,4 @@
-import { BrainCircuit, ChessPawn, Settings } from 'lucide-react';
+import {  ChessPawn, Settings } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export default function Header() {

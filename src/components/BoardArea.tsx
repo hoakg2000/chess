@@ -1,7 +1,7 @@
 import { Chessboard } from 'react-chessboard';
 import { type Chess } from 'chess.js';
-import type { GameMove, MoveClassification } from './AnalysisPanel';
-import { Loader2, CheckCircle2, AlertTriangle, XCircle, Star, Zap } from 'lucide-react';
+import type { GameMove } from './AnalysisPanel';
+import { Loader2 } from 'lucide-react';
 
 interface BoardAreaProps {
   game: Chess;

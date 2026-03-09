@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, BrainCircuit, ChevronLeft, ChevronRight, Loader2, AlertCircle } from 'lucide-react';
+import { Search,Loader2, AlertCircle } from 'lucide-react';
 import { chessApi, type ChessGame } from '../services/chessApi';
 import { useSearchParams } from 'react-router-dom';
 
