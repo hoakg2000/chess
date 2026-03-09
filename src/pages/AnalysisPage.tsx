@@ -1,0 +1,237 @@
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { Chess } from 'chess.js';
+import debounce from 'lodash/debounce';
+import type { GameMove, MoveClassification } from '../components/AnalysisPanel';
+import { useStockfish } from '../hooks/useStockfish';
+import type { ChessGame } from '../services/chessApi';
+import GameSearchPanel from '../components/GameSearchPanel';
+import BoardArea from '../components/BoardArea';
+import AnalysisPanel from '../components/AnalysisPanel';
+
+const moveSound = new Audio('https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/move-self.mp3');
+const captureSound = new Audio('https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/capture.mp3');
+const checkSound = new Audio('https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/move-check.mp3');
+const gameEndSound = new Audio('https://images.chesscomfiles.com/chess-themes/sounds/_MP3_/default/game-end.mp3'); // Dùng cho checkmate
+
+export default function AnalysisPage() {
+  const [game, setGame] = useState(new Chess());
+  const [moveHistory, setMoveHistory] = useState<GameMove[]>([]);
+  const [currentMoveIndex, setCurrentMoveIndex] = useState<number>(-1);
+  const [gameMetadata, setGameMetadata] = useState<{ white: string, black: string } | null>(null);
+  const [boardOrientation, setBoardOrientation] = useState<'white' | 'black'>('white');
+  const [isLoadingBoard, setIsLoadingBoard] = useState<boolean>(false);
+
+  // States cho quá trình phân tích
+  const { isReady, evaluateFen } = useStockfish();
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analyzeProgress, setAnalyzeProgress] = useState(0);
+
+  // Lấy điểm số hiện tại để truyền xuống BoardArea (nếu index -1 thì cho điểm 0.0)
+  const currentEvalScore = currentMoveIndex >= 0 ? moveHistory[currentMoveIndex]?.evaluation : 0;
+
+  // Xử lý phân tích toàn bộ ván đấu
+
+  const handleAnalyzeGame = async () => {
+    if (!isReady || isAnalyzing || moveHistory.length === 0) return;
+    setIsAnalyzing(true);
+
+    const historyCopy = [...moveHistory];
+    let previousEval = 0; // Thế cờ khởi đầu là 0
+
+    for (let i = 0; i < historyCopy.length; i++) {
+      const fen = historyCopy[i].fen;
+      // 1. Phân tích điểm nước đi hiện tại
+      let currentEval = await evaluateFen(fen, 10);
+
+      // Quy đổi về góc nhìn Trắng
+      const isBlackToMove = fen.includes(' b ');
+      const normalizedEval = isBlackToMove ? -currentEval : currentEval;
+
+      // 2. Tính toán sai số (Loss)
+      // Nếu là quân Trắng đi (i chẵn), Trắng muốn điểm tăng. 
+      // Nếu là quân Đen đi (i lẻ), Đen muốn điểm giảm (âm hơn).
+      const isWhiteTurn = i % 2 === 0;
+      const loss = isWhiteTurn ? (normalizedEval - previousEval) : (previousEval - normalizedEval);
+
+      // 3. Tạm thời giả định nếu loss cực thấp là Best (MVP)
+      historyCopy[i].evaluation = normalizedEval;
+      historyCopy[i].classification = classifyMove(loss, Math.abs(loss) < 10);
+
+      previousEval = normalizedEval;
+      setMoveHistory([...historyCopy]);
+      setAnalyzeProgress(Math.round(((i + 1) / historyCopy.length) * 100));
+    }
+    setIsAnalyzing(false);
+  };
+
+  const processGameData = useMemo(
+    () =>
+      debounce((selectedGame: ChessGame, searchedUsername: string) => {
+        try {
+          const tempGame = new Chess();
+          tempGame.loadPgn(selectedGame.pgn);
+          const rawHistory = tempGame.history({ verbose: true });
+
+          const replayGame = new Chess();
+          const historyWithFen: GameMove[] = rawHistory.map(move => {
+            replayGame.move(move);
+            return {
+              san: move.san,
+              fen: replayGame.fen(),
+              from: move.from, // Thêm tọa độ từ
+              to: move.to      // Thêm tọa độ đến
+            };
+          });
+
+          setMoveHistory(historyWithFen);
+
+          const isBlack = selectedGame.black.username.toLowerCase() === searchedUsername.toLowerCase();
+          setBoardOrientation(isBlack ? 'black' : 'white');
+
+          setGameMetadata({
+            white: selectedGame.white.username,
+            black: selectedGame.black.username
+          });
+
+          const lastIndex = historyWithFen.length - 1;
+          setCurrentMoveIndex(lastIndex);
+
+          const newGame = new Chess();
+          if (lastIndex >= 0) {
+            newGame.load(historyWithFen[lastIndex].fen);
+          }
+          setGame(newGame);
+
+        } catch (error) {
+          console.error("Lỗi parse PGN:", error);
+        } finally {
+          setIsLoadingBoard(false);
+        }
+      }, 500),
+    []
+  );
+
+  useEffect(() => { return () => processGameData.cancel(); }, [processGameData]);
+
+  const handleSelectGame = (selectedGame: ChessGame, searchedUsername: string) => {
+    setIsLoadingBoard(true);
+    // Reset trạng thái phân tích của ván cũ
+    setIsAnalyzing(false);
+    setAnalyzeProgress(0);
+    processGameData(selectedGame, searchedUsername);
+  };
+
+  const handleJumpToMove = useCallback((index: number) => {
+    if (index < -1 || index >= moveHistory.length || index === currentMoveIndex) return;
+
+    // Phân tích chuỗi SAN để phát đúng âm thanh khi đi tới
+    if (index > currentMoveIndex && index >= 0) {
+      const moveSan = moveHistory[index].san;
+
+      // Ưu tiên kiểm tra Checkmate trước, sau đó tới Check, Capture và cuối cùng là Move thường
+      if (moveSan.includes('#')) {
+        gameEndSound.currentTime = 0;
+        gameEndSound.play().catch(() => { });
+      } else if (moveSan.includes('+')) {
+        checkSound.currentTime = 0;
+        checkSound.play().catch(() => { });
+      } else if (moveSan.includes('x')) {
+        captureSound.currentTime = 0;
+        captureSound.play().catch(() => { });
+      } else {
+        moveSound.currentTime = 0;
+        moveSound.play().catch(() => { });
+      }
+    } else {
+      // Đang lùi lại (Tua ngược): Chỉ phát âm thanh di chuyển cơ bản
+      moveSound.currentTime = 0;
+      moveSound.play().catch(() => { });
+    }
+
+    setCurrentMoveIndex(index);
+    const newGame = new Chess();
+    if (index >= 0) newGame.load(moveHistory[index].fen);
+    setGame(newGame);
+  }, [moveHistory, currentMoveIndex]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // 1. Chặn sự kiện nếu người dùng đang gõ chữ vào ô tìm kiếm
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      // 2. Chặn nếu chưa có dữ liệu ván đấu
+      if (moveHistory.length === 0) return;
+
+      // 3. Xử lý 4 phím mũi tên
+      switch (e.key) {
+        case 'ArrowLeft':
+          e.preventDefault(); // Ngăn trình duyệt cuộn ngang nếu có
+          handleJumpToMove(currentMoveIndex - 1);
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          handleJumpToMove(currentMoveIndex + 1);
+          break;
+        case 'ArrowUp':
+          e.preventDefault(); // Ngăn trình duyệt cuộn lên
+          handleJumpToMove(-1); // Nhảy về đầu trận
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          handleJumpToMove(moveHistory.length - 1); // Nhảy đến cuối trận
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentMoveIndex, moveHistory, handleJumpToMove]);
+
+  const classifyMove = (loss: number, isBest: boolean): MoveClassification => {
+    if (isBest) return 'best';
+    const absLoss = Math.abs(loss);
+    if (absLoss <= 30) return 'excellent';
+    if (absLoss <= 100) return 'good';
+    if (absLoss <= 300) return 'inaccuracy';
+    if (absLoss <= 500) return 'mistake';
+    return 'blunder';
+  };
+
+  const currentMove = currentMoveIndex >= 0 ? moveHistory[currentMoveIndex] : undefined;
+
+ return (
+    // Bỏ Header và các thẻ bọc ngoài đi, chỉ trả về đúng cái Grid
+    <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-full">
+      <div className="lg:col-span-3 h-full overflow-hidden hidden lg:block">
+        <GameSearchPanel onSelectGame={handleSelectGame} />
+      </div>
+
+      <div className="lg:col-span-6 h-full flex items-center justify-center overflow-hidden">
+        <BoardArea 
+          game={game} 
+          whitePlayer={gameMetadata?.white} 
+          blackPlayer={gameMetadata?.black}
+          orientation={boardOrientation} 
+          isLoading={isLoadingBoard}
+          currentEval={currentEvalScore}
+          lastMove={currentMove} 
+        />
+      </div>
+
+      <div className="lg:col-span-3 h-full overflow-hidden">
+        <AnalysisPanel 
+          moveHistory={moveHistory} 
+          currentMoveIndex={currentMoveIndex}
+          onJumpToMove={handleJumpToMove}
+          onAnalyzeGame={handleAnalyzeGame}
+          isAnalyzing={isAnalyzing}
+          analyzeProgress={analyzeProgress}
+          isEngineReady={isReady}
+          orientation={boardOrientation}
+        />
+      </div>
+    </div>
+  );
+}

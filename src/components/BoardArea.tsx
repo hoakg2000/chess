@@ -54,18 +54,6 @@ export default function BoardArea({ game, whitePlayer, blackPlayer, orientation,
     return { left: `${x * 12.5}%`, top: `${y * 12.5}%` };
   };
 
-  // Mapping màu sắc theo phân loại
-  const getClassificationStyle = (cls?: MoveClassification) => {
-    switch (cls) {
-      case 'brilliant': return { backgroundColor: 'rgba(2, 132, 199, 0.4)' }; // Blue
-      case 'best': return { backgroundColor: 'rgba(34, 197, 94, 0.4)' };     // Green
-      case 'blunder': return { backgroundColor: 'rgba(239, 68, 68, 0.4)' };    // Red
-      case 'mistake': return { backgroundColor: 'rgba(249, 115, 22, 0.4)' };   // Orange
-      case 'inaccuracy': return { backgroundColor: 'rgba(234, 179, 8, 0.4)' }; // Yellow
-      default: return {};
-    }
-  };
-
   // Render Icon overlay
   const renderMoveBadge = () => {
     if (!lastMove?.to || !lastMove?.classification) return null;
@@ -101,7 +89,7 @@ export default function BoardArea({ game, whitePlayer, blackPlayer, orientation,
   };
 
   return (
-    <div className="flex flex-col items-center justify-center w-full h-full max-w-[calc(100vh-16rem)] mx-auto px-2">
+    <div className="flex flex-col items-center w-full h-full max-w-[calc(100vh-16rem)] mx-auto px-2">
 
       <div className="w-full flex items-center gap-3 mb-3">
         <div className={`w-8 h-8 rounded-md flex items-center justify-center text-xs font-bold shrink-0 uppercase transition-colors ${topIconClass}`}>

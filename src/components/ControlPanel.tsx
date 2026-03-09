@@ -1,19 +1,25 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, BrainCircuit, ChevronLeft, ChevronRight, Loader2, AlertCircle } from 'lucide-react';
 import { chessApi, type ChessGame } from '../services/chessApi';
+import { useSearchParams } from 'react-router-dom';
 
 export default function ControlPanel() {
-  const [username, setUsername] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  
+  // Khởi tạo username từ URL (nếu có), nếu không thì chuỗi rỗng
+  const initialUsername = searchParams.get('username') || '';
+  const [username, setUsername] = useState(initialUsername);
+  
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // State quản lý danh sách game
   const [games, setGames] = useState<ChessGame[]>([]);
   const [archives, setArchives] = useState<string[]>([]);
   const [currentArchiveIndex, setCurrentArchiveIndex] = useState(0);
 
-  const handleSearch = async () => {
-    if (!username.trim()) return;
+  // Tách logic gọi API ra một hàm riêng, nhận tham số searchName để gọi cho chuẩn
+  const executeSearch = async (searchName: string) => {
+    if (!searchName.trim()) return;
     
     setIsLoading(true);
     setError(null);
@@ -22,11 +28,9 @@ export default function ControlPanel() {
     setCurrentArchiveIndex(0);
 
     try {
-      // 1. Check user
-      await chessApi.checkUser(username);
+      await chessApi.checkUser(searchName);
       
-      // 2. Lấy danh sách archive (đã được sort mới nhất lên đầu)
-      const archiveUrls = await chessApi.getArchives(username);
+      const archiveUrls = await chessApi.getArchives(searchName);
       
       if (archiveUrls.length === 0) {
         setError('Người chơi này chưa có ván đấu nào.');
@@ -36,7 +40,6 @@ export default function ControlPanel() {
 
       setArchives(archiveUrls);
 
-      // 3. Lấy game của tháng gần nhất
       const recentGames = await chessApi.getGamesFromArchive(archiveUrls[0]);
       setGames(recentGames);
       
@@ -45,6 +48,23 @@ export default function ControlPanel() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Lắng nghe sự thay đổi của searchParams (khi component mount hoặc URL đổi)
+  useEffect(() => {
+    const urlUsername = searchParams.get('username');
+    if (urlUsername) {
+      setUsername(urlUsername); // Cập nhật ô input
+      executeSearch(urlUsername); // Tự động tìm kiếm
+    }
+  }, [searchParams]);
+
+  // Hàm xử lý khi người dùng bấm nút Tìm kiếm
+  const handleSearchClick = () => {
+    if (!username.trim()) return;
+    
+    // Cập nhật lại URL params, việc này sẽ trigger useEffect ở trên để gọi API
+    setSearchParams({ username: username.trim() });
   };
 
   const handleLoadMore = async () => {
@@ -78,13 +98,13 @@ export default function ControlPanel() {
               type="text" 
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              onKeyDown={(e) => e.key === 'Enter' && handleSearchClick()}
               placeholder="Nhập username..." 
               className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-600"
             />
           </div>
           <button 
-            onClick={handleSearch}
+            onClick={handleSearchClick}
             disabled={isLoading}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 disabled:opacity-50"
           >

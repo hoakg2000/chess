@@ -1,19 +1,27 @@
-import { useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Search, Loader2, AlertCircle } from 'lucide-react';
 import { chessApi, type ChessGame } from '../services/chessApi';
+import { useSearchParams } from 'react-router-dom';
 
 interface GameSearchPanelProps {
-  // Thay đổi: Nhận toàn bộ object ChessGame thay vì chỉ string PGN
   onSelectGame: (game: ChessGame, searchedUsername: string) => void;
 }
 
 export default function GameSearchPanel({ onSelectGame }: GameSearchPanelProps) {
-  const [username, setUsername] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const userFromUrl = searchParams.get('username') || '';
+  
+  // State quản lý text đang gõ trong input (chưa search)
+  const [usernameInput, setUsernameInput] = useState(userFromUrl);
+  
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [games, setGames] = useState<ChessGame[]>([]);
   const [archives, setArchives] = useState<string[]>([]);
   const [currentArchiveIndex, setCurrentArchiveIndex] = useState(0);
+  
+  // Lưu lại tên user đã thực sự được dùng để search (lấy từ URL)
+  const [searchedUsername, setSearchedUsername] = useState(userFromUrl);
 
   const formatTimeControl = (tc: string) => {
     if (!tc) return '--';
@@ -22,32 +30,62 @@ export default function GameSearchPanel({ onSelectGame }: GameSearchPanelProps) 
       return `${parseInt(time) / 60} phút + ${inc}s`;
     }
     if (tc.includes('/')) return 'Daily';
-    
+
     const seconds = parseInt(tc);
     if (isNaN(seconds)) return tc;
     if (seconds < 60) return `${seconds}s`;
     return `${seconds / 60} phút`;
   };
 
-  const handleSearch = async () => {
-    if (!username.trim()) return;
-    setIsLoading(true); setError(null); setGames([]); setArchives([]); setCurrentArchiveIndex(0);
+  const performSearch = useCallback(async (searchName: string) => {
+    if (!searchName.trim()) return;
+    
+    setIsLoading(true);
+    setError(null);
+    setGames([]);
+    setArchives([]);
+    setCurrentArchiveIndex(0);
 
     try {
-      await chessApi.checkUser(username);
-      const archiveUrls = await chessApi.getArchives(username);
+      await chessApi.checkUser(searchName);
+      const archiveUrls = await chessApi.getArchives(searchName);
+      
       if (archiveUrls.length === 0) {
-        setError('Người chơi này chưa có ván đấu nào.'); return;
+        setError('Người chơi này chưa có ván đấu nào.');
+        return;
       }
+      
       setArchives(archiveUrls);
       const recentGames = await chessApi.getGamesFromArchive(archiveUrls[0]);
       setGames(recentGames);
+      setSearchedUsername(searchName);
+      setUsernameInput(searchName); // Đồng bộ lại input cho chuẩn với URL
+      
     } catch (err: any) {
       setError(err.message || 'Có lỗi xảy ra');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  // CHỈ THEO DÕI SỰ THAY ĐỔI CỦA URL ĐỂ GỌI API
+  useEffect(() => {
+    if (userFromUrl) {
+      performSearch(userFromUrl);
+    }
+  }, [userFromUrl, performSearch]);
+
+  // HÀNH ĐỘNG CLICK TÌM KIẾM CHỈ ĐỔI URL (Không gọi API trực tiếp)
+  const handleSearch = useCallback(() => {
+    if (!usernameInput.trim()) return;
+    setSearchParams({ username: usernameInput.trim() });
+  }, [usernameInput, setSearchParams]);
+
+  const handleInputKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSearch();
+    }
+  }, [handleSearch]);
 
   const handleLoadMore = async () => {
     if (currentArchiveIndex + 1 >= archives.length) return;
@@ -73,9 +111,12 @@ export default function GameSearchPanel({ onSelectGame }: GameSearchPanelProps) 
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-            <input 
-              type="text" value={username} onChange={(e) => setUsername(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              placeholder="Username..." 
+            <input
+              type="text" 
+              value={usernameInput} 
+              onChange={(e) => setUsernameInput(e.target.value)} 
+              onKeyDown={handleInputKeyDown}
+              placeholder="Username..."
               className="w-full bg-slate-950 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-blue-500 transition-all"
             />
           </div>
@@ -92,29 +133,29 @@ export default function GameSearchPanel({ onSelectGame }: GameSearchPanelProps) 
 
       <div className="flex-1 overflow-y-auto custom-scrollbar p-2 bg-slate-950/50">
         {games.length === 0 && !isLoading && !error && (
-           <div className="h-full flex items-center justify-center text-slate-600 text-sm">Chưa có dữ liệu</div>
+          <div className="h-full flex items-center justify-center text-slate-600 text-sm">Chưa có dữ liệu</div>
         )}
         <div className="flex flex-col gap-1.5">
           {games.map((game, idx) => (
-            <button 
+            <button
               key={`${game.url}-${idx}`}
-              onClick={() => onSelectGame(game, username)} // Truyền toàn bộ object game
+              onClick={() => onSelectGame(game, searchedUsername)}
               className="w-full text-left bg-slate-900 border border-slate-800 hover:border-blue-500/50 hover:bg-slate-800 p-2.5 rounded-lg transition-all group flex flex-col gap-1"
             >
               <div className="flex justify-between items-center w-full">
                 <span className="text-sm font-medium text-slate-300 truncate pr-2">
-                  <span className={game.white.username.toLowerCase() === username.toLowerCase() ? 'text-blue-400 font-semibold' : ''}>{game.white.username}</span>
+                  <span className={game.white.username.toLowerCase() === searchedUsername.toLowerCase() ? 'text-blue-400 font-semibold' : ''}>{game.white.username}</span>
                   <span className="text-slate-600 mx-1.5 text-xs">vs</span>
-                  <span className={game.black.username.toLowerCase() === username.toLowerCase() ? 'text-blue-400 font-semibold' : ''}>{game.black.username}</span>
+                  <span className={game.black.username.toLowerCase() === searchedUsername.toLowerCase() ? 'text-blue-400 font-semibold' : ''}>{game.black.username}</span>
                 </span>
               </div>
               <div className="flex justify-between items-center w-full">
-                 <span className="text-[11px] font-mono text-slate-500">
-                    {new Date(game.end_time * 1000).toLocaleDateString('vi-VN')}
-                 </span>
-                 <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
-                    {formatTimeControl(game.time_control)}
-                 </span>
+                <span className="text-[11px] font-mono text-slate-500">
+                  {new Date(game.end_time * 1000).toLocaleDateString('vi-VN')}
+                </span>
+                <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">
+                  {formatTimeControl(game.time_control)}
+                </span>
               </div>
             </button>
           ))}
