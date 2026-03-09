@@ -1,6 +1,7 @@
 import { BrainCircuit, ChevronLeft, ChevronRight, FastForward, Rewind, Play, Loader2 } from 'lucide-react';
 import { ResponsiveContainer, LineChart, Line, YAxis, ReferenceLine, Tooltip, AreaChart, Area } from 'recharts';
 
+
 export interface GameMove {
   san: string;
   fen: string;
