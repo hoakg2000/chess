@@ -27,10 +27,10 @@ export default function PuzzlePage() {
   const [game, setGame] = useState(new Chess());
   const [orientation, setOrientation] = useState<'white' | 'black'>('white');
   const [puzzleState, setPuzzleState] = useState<'idle' | 'playing' | 'failed' | 'solved'>('idle');
-  const [activeTheme, setActiveTheme] = useState<string>('all'); 
-  const [moveIndex, setMoveIndex] = useState(-1); 
+  const [activeTheme, setActiveTheme] = useState<string>('all');
+  const [moveIndex, setMoveIndex] = useState(-1);
   const [hintSquare, setHintSquare] = useState<string | null>(null);
-  const [lastMove, setLastMove] = useState<{from: string, to: string, status: 'correct' | 'wrong'} | null>(null);
+  const [lastMove, setLastMove] = useState<{ from: string, to: string, status: 'correct' | 'wrong' } | null>(null);
 
   const blunderTimeoutRef = useRef<number | null>(null);
 
@@ -71,7 +71,7 @@ export default function PuzzlePage() {
     const from = uciMove.substring(0, 2);
     const to = uciMove.substring(2, 4);
     const promotion = uciMove.length === 5 ? uciMove[4] : undefined;
-    
+
     const moveObj = chessInstance.move({ from, to, promotion });
     if (moveObj) {
       playSound(moveObj.san); // Phát âm thanh khi có nước đi hợp lệ
@@ -99,7 +99,7 @@ export default function PuzzlePage() {
       const res = await fetch(`https://lichess.org/api/puzzle/${randomId}`);
       if (!res.ok) throw new Error('Fetch API thất bại');
       const data = await res.json();
-      
+
       const tempGame = new Chess();
       tempGame.loadPgn(data.game.pgn);
       const historyMoves = tempGame.history();
@@ -114,10 +114,10 @@ export default function PuzzlePage() {
       const formattedPuzzle: FormattedPuzzle = {
         id: data.puzzle.id,
         elo: data.puzzle.rating,
-        themes: data.puzzle.themes, 
+        themes: data.puzzle.themes,
         initialFen: preBlunderGame.fen(),
         blunderMove: blunderMove,
-        moves: data.puzzle.solution 
+        moves: data.puzzle.solution
       };
 
       loadPuzzle(formattedPuzzle);
@@ -134,32 +134,32 @@ export default function PuzzlePage() {
 
     setCurrentPuzzle(puzzle);
     const newGame = new Chess(puzzle.initialFen);
-    
-    const isOpponentWhite = newGame.turn() === 'w'; 
-    setOrientation(isOpponentWhite ? 'black' : 'white'); 
-    
+
+    const isOpponentWhite = newGame.turn() === 'w';
+    setOrientation(isOpponentWhite ? 'black' : 'white');
+
     setGame(newGame);
-    setMoveIndex(-1); 
-    setPuzzleState('playing'); 
+    setMoveIndex(-1);
+    setPuzzleState('playing');
     setHintSquare(null);
     setLastMove(null);
 
     blunderTimeoutRef.current = window.setTimeout(() => {
       const gameAfterBlunder = new Chess(newGame.fen());
       const moveObj = gameAfterBlunder.move(puzzle.blunderMove);
-      
+
       setGame(gameAfterBlunder);
-      setMoveIndex(0); 
+      setMoveIndex(0);
       if (moveObj) {
         playSound(moveObj.san); // Phát âm thanh nước đi sai lầm của đối thủ
-        setLastMove({ from: moveObj.from, to: moveObj.to, status: 'wrong' }); 
+        setLastMove({ from: moveObj.from, to: moveObj.to, status: 'wrong' });
       }
     }, 1000);
   };
 
   const handlePieceDrop = (sourceSquare: string, targetSquare: string) => {
     if (puzzleState !== 'playing' && puzzleState !== 'failed') return false;
-    if (moveIndex < 0 || !currentPuzzle) return false; 
+    if (moveIndex < 0 || !currentPuzzle) return false;
 
     const uciMove = sourceSquare + targetSquare;
     const expectedMove = currentPuzzle.moves[moveIndex];
@@ -181,12 +181,12 @@ export default function PuzzlePage() {
           const cpuGame = new Chess(newGame.fen());
           playUciMove(cpuGame, currentPuzzle.moves[moveIndex + 1]); // Âm thanh tự động kích hoạt
           setGame(cpuGame);
-          
+
           setMoveIndex(moveIndex + 2);
-          setLastMove(null); 
-          
+          setLastMove(null);
+
           if (moveIndex + 2 >= currentPuzzle.moves.length) {
-             setPuzzleState('solved');
+            setPuzzleState('solved');
           }
         }, 500);
       }
@@ -195,7 +195,7 @@ export default function PuzzlePage() {
       const newGame = new Chess(game.fen());
       try {
         const moveObj = playUciMove(newGame, uciMove); // Vẫn phát âm thanh bình thường để user biết đã kéo xong
-        if (!moveObj) return false; 
+        if (!moveObj) return false;
       } catch (e) {
         return false;
       }
@@ -203,14 +203,14 @@ export default function PuzzlePage() {
       setGame(newGame);
       setPuzzleState('failed');
       setHintSquare(null);
-      setLastMove({ from: sourceSquare, to: targetSquare, status: 'wrong' }); 
-      
+      setLastMove({ from: sourceSquare, to: targetSquare, status: 'wrong' });
+
       if (puzzleState === 'playing') {
         setHistory(prev => [{
           id: currentPuzzle.id, elo: currentPuzzle.elo, themes: currentPuzzle.themes, result: 'failed'
         }, ...prev]);
       }
-      return true; 
+      return true;
     }
   };
 
@@ -219,9 +219,9 @@ export default function PuzzlePage() {
 
     const resetGame = new Chess(currentPuzzle.initialFen);
     const moveObj = resetGame.move(currentPuzzle.blunderMove);
-    
+
     setGame(resetGame);
-    setMoveIndex(0); 
+    setMoveIndex(0);
     setPuzzleState('playing');
     setHintSquare(null);
 
@@ -236,7 +236,7 @@ export default function PuzzlePage() {
   const handleHint = () => {
     if (!currentPuzzle || moveIndex < 0 || moveIndex >= currentPuzzle.moves.length) return;
     const expectedMove = currentPuzzle.moves[moveIndex];
-    setHintSquare(expectedMove.substring(0, 2)); 
+    setHintSquare(expectedMove.substring(0, 2));
   };
 
   const handleSkipOrNext = () => {
@@ -244,53 +244,53 @@ export default function PuzzlePage() {
   };
 
   const handleSelectHistory = async (puzzleId: string) => {
-  setIsLoadingPuzzle(true);
-  try {
-    const res = await fetch(`https://lichess.org/api/puzzle/${puzzleId}`);
-    if (!res.ok) throw new Error('Không thể tải câu đố này');
-    const data = await res.json();
-    
-    // Logic parse PGN y hệt như hàm handleStartPuzzle của bạn
-    const tempGame = new Chess();
-    tempGame.loadPgn(data.game.pgn);
-    const historyMoves = tempGame.history();
-    const blunderMove = historyMoves[historyMoves.length - 1];
+    setIsLoadingPuzzle(true);
+    try {
+      const res = await fetch(`https://lichess.org/api/puzzle/${puzzleId}`);
+      if (!res.ok) throw new Error('Không thể tải câu đố này');
+      const data = await res.json();
 
-    const preBlunderGame = new Chess();
-    for (let i = 0; i < historyMoves.length - 1; i++) {
-      preBlunderGame.move(historyMoves[i]);
+      // Logic parse PGN y hệt như hàm handleStartPuzzle của bạn
+      const tempGame = new Chess();
+      tempGame.loadPgn(data.game.pgn);
+      const historyMoves = tempGame.history();
+      const blunderMove = historyMoves[historyMoves.length - 1];
+
+      const preBlunderGame = new Chess();
+      for (let i = 0; i < historyMoves.length - 1; i++) {
+        preBlunderGame.move(historyMoves[i]);
+      }
+
+      const formattedPuzzle: FormattedPuzzle = {
+        id: data.puzzle.id,
+        elo: data.puzzle.rating,
+        themes: data.puzzle.themes,
+        initialFen: preBlunderGame.fen(),
+        blunderMove: blunderMove,
+        moves: data.puzzle.solution
+      };
+
+      loadPuzzle(formattedPuzzle);
+    } catch (error) {
+      alert("Lỗi khi tải lại câu đố cũ.");
+    } finally {
+      setIsLoadingPuzzle(false);
     }
+  };
 
-    const formattedPuzzle: FormattedPuzzle = {
-      id: data.puzzle.id,
-      elo: data.puzzle.rating,
-      themes: data.puzzle.themes,
-      initialFen: preBlunderGame.fen(),
-      blunderMove: blunderMove,
-      moves: data.puzzle.solution 
-    };
-
-    loadPuzzle(formattedPuzzle);
-  } catch (error) {
-    alert("Lỗi khi tải lại câu đố cũ.");
-  } finally {
-    setIsLoadingPuzzle(false);
-  }
-};
-
-const handleClearHistory = () => {
-  if (window.confirm("Bạn có chắc chắn muốn xóa toàn bộ lịch sử giải đố?")) {
-    setHistory([]);
-    localStorage.removeItem('puzzle_history');
-  }
-};
+  const handleClearHistory = () => {
+    if (window.confirm("Bạn có chắc chắn muốn xóa toàn bộ lịch sử giải đố?")) {
+      setHistory([]);
+      localStorage.removeItem('puzzle_history');
+    }
+  };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-full relative">
       <div className="lg:col-span-3 h-full overflow-hidden hidden lg:block">
-        <PuzzleSettingsPanel 
+        <PuzzleSettingsPanel
           onStart={handleStartPuzzle}
-          isPlaying={isLoadingPuzzle || (puzzleState === 'playing' && moveIndex < 0)} 
+          isPlaying={isLoadingPuzzle || (puzzleState === 'playing' && moveIndex < 0)}
         />
       </div>
 
@@ -301,8 +301,8 @@ const handleClearHistory = () => {
             <span className="text-white font-medium text-sm bg-slate-900/80 px-4 py-2 rounded-lg">Đang kết nối Lichess...</span>
           </div>
         )}
-        
-        <PuzzleBoardArea 
+
+        <PuzzleBoardArea
           game={game}
           orientation={orientation}
           puzzleState={puzzleState}
@@ -314,15 +314,15 @@ const handleClearHistory = () => {
       </div>
 
       <div className="lg:col-span-3 h-full overflow-hidden">
-        <PuzzleHistoryPanel 
+        <PuzzleHistoryPanel
           history={history}
           puzzleState={puzzleState}
           currentPuzzle={currentPuzzle}
           onSkipOrNext={handleSkipOrNext}
           onHint={handleHint}
           onRetry={handleRetry}
-          onClearHistory={handleClearHistory} 
-  onSelectHistory={handleSelectHistory} 
+          onClearHistory={handleClearHistory}
+          onSelectHistory={handleSelectHistory}
         />
       </div>
     </div>
