@@ -4,7 +4,7 @@ import debounce from 'lodash/debounce';
 import Header from './components/Header';
 import BoardArea from './components/BoardArea';
 import GameSearchPanel from './components/GameSearchPanel';
-import AnalysisPanel, { type GameMove } from './components/AnalysisPanel';
+import AnalysisPanel, { type GameMove, type MoveClassification } from './components/AnalysisPanel';
 import { type ChessGame } from './services/chessApi';
 import { useStockfish } from './hooks/useStockfish'; // Import Hook
 
@@ -30,52 +30,61 @@ export default function App() {
   const currentEvalScore = currentMoveIndex >= 0 ? moveHistory[currentMoveIndex]?.evaluation : 0;
 
   // Xử lý phân tích toàn bộ ván đấu
+
   const handleAnalyzeGame = async () => {
     if (!isReady || isAnalyzing || moveHistory.length === 0) return;
     setIsAnalyzing(true);
-    setAnalyzeProgress(0);
 
     const historyCopy = [...moveHistory];
+    let previousEval = 0; // Thế cờ khởi đầu là 0
 
-    // Chạy vòng lặp đồng bộ qua từng nước đi
     for (let i = 0; i < historyCopy.length; i++) {
       const fen = historyCopy[i].fen;
-      let score = await evaluateFen(fen, 10); // Phân tích ở Depth 10
-      
-      // Stockfish trả điểm theo góc nhìn của người chuẩn bị đi.
-      // Nếu FEN có chữ ' b ' -> chuẩn bị đến lượt Đen. Nghĩa là Trắng vừa đi xong.
-      // Nếu lúc này Đen đang ưu thế (điểm dương), tức là đối với Trắng, điểm phải là Âm.
+      // 1. Phân tích điểm nước đi hiện tại
+      let currentEval = await evaluateFen(fen, 10);
+
+      // Quy đổi về góc nhìn Trắng
       const isBlackToMove = fen.includes(' b ');
-      if (isBlackToMove) {
-         score = -score; // Đảo dấu để chuẩn hóa toàn bộ về góc nhìn của TRẮNG
-      }
-      
-      historyCopy[i].evaluation = score;
-      
-      // Cập nhật UI theo từng nước để tạo hiệu ứng Progress mượt mà
-      setMoveHistory([...historyCopy]); 
+      const normalizedEval = isBlackToMove ? -currentEval : currentEval;
+
+      // 2. Tính toán sai số (Loss)
+      // Nếu là quân Trắng đi (i chẵn), Trắng muốn điểm tăng. 
+      // Nếu là quân Đen đi (i lẻ), Đen muốn điểm giảm (âm hơn).
+      const isWhiteTurn = i % 2 === 0;
+      const loss = isWhiteTurn ? (normalizedEval - previousEval) : (previousEval - normalizedEval);
+
+      // 3. Tạm thời giả định nếu loss cực thấp là Best (MVP)
+      historyCopy[i].evaluation = normalizedEval;
+      historyCopy[i].classification = classifyMove(loss, Math.abs(loss) < 10);
+
+      previousEval = normalizedEval;
+      setMoveHistory([...historyCopy]);
       setAnalyzeProgress(Math.round(((i + 1) / historyCopy.length) * 100));
     }
-    
     setIsAnalyzing(false);
   };
 
   const processGameData = useMemo(
-    () => 
+    () =>
       debounce((selectedGame: ChessGame, searchedUsername: string) => {
         try {
           const tempGame = new Chess();
           tempGame.loadPgn(selectedGame.pgn);
           const rawHistory = tempGame.history({ verbose: true });
-          
+
           const replayGame = new Chess();
           const historyWithFen: GameMove[] = rawHistory.map(move => {
             replayGame.move(move);
-            return { san: move.san, fen: replayGame.fen() }; // Khởi tạo mảng chưa có evaluation
+            return {
+              san: move.san,
+              fen: replayGame.fen(),
+              from: move.from, // Thêm tọa độ từ
+              to: move.to      // Thêm tọa độ đến
+            };
           });
 
           setMoveHistory(historyWithFen);
-          
+
           const isBlack = selectedGame.black.username.toLowerCase() === searchedUsername.toLowerCase();
           setBoardOrientation(isBlack ? 'black' : 'white');
 
@@ -86,7 +95,7 @@ export default function App() {
 
           const lastIndex = historyWithFen.length - 1;
           setCurrentMoveIndex(lastIndex);
-          
+
           const newGame = new Chess();
           if (lastIndex >= 0) {
             newGame.load(historyWithFen[lastIndex].fen);
@@ -105,38 +114,38 @@ export default function App() {
   useEffect(() => { return () => processGameData.cancel(); }, [processGameData]);
 
   const handleSelectGame = (selectedGame: ChessGame, searchedUsername: string) => {
-    setIsLoadingBoard(true); 
+    setIsLoadingBoard(true);
     // Reset trạng thái phân tích của ván cũ
     setIsAnalyzing(false);
     setAnalyzeProgress(0);
-    processGameData(selectedGame, searchedUsername); 
+    processGameData(selectedGame, searchedUsername);
   };
 
   const handleJumpToMove = useCallback((index: number) => {
     if (index < -1 || index >= moveHistory.length || index === currentMoveIndex) return;
-    
+
     // Phân tích chuỗi SAN để phát đúng âm thanh khi đi tới
     if (index > currentMoveIndex && index >= 0) {
       const moveSan = moveHistory[index].san;
-      
+
       // Ưu tiên kiểm tra Checkmate trước, sau đó tới Check, Capture và cuối cùng là Move thường
       if (moveSan.includes('#')) {
         gameEndSound.currentTime = 0;
-        gameEndSound.play().catch(() => {});
+        gameEndSound.play().catch(() => { });
       } else if (moveSan.includes('+')) {
         checkSound.currentTime = 0;
-        checkSound.play().catch(() => {});
+        checkSound.play().catch(() => { });
       } else if (moveSan.includes('x')) {
         captureSound.currentTime = 0;
-        captureSound.play().catch(() => {});
+        captureSound.play().catch(() => { });
       } else {
         moveSound.currentTime = 0;
-        moveSound.play().catch(() => {});
+        moveSound.play().catch(() => { });
       }
     } else {
       // Đang lùi lại (Tua ngược): Chỉ phát âm thanh di chuyển cơ bản
       moveSound.currentTime = 0;
-      moveSound.play().catch(() => {});
+      moveSound.play().catch(() => { });
     }
 
     setCurrentMoveIndex(index);
@@ -179,37 +188,51 @@ export default function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentMoveIndex, moveHistory, handleJumpToMove]);
+
+  const classifyMove = (loss: number, isBest: boolean): MoveClassification => {
+    if (isBest) return 'best';
+    const absLoss = Math.abs(loss);
+    if (absLoss <= 30) return 'excellent';
+    if (absLoss <= 100) return 'good';
+    if (absLoss <= 300) return 'inaccuracy';
+    if (absLoss <= 500) return 'mistake';
+    return 'blunder';
+  };
+
+  const currentMove = currentMoveIndex >= 0 ? moveHistory[currentMoveIndex] : undefined;
+
   return (
     <div className="h-screen flex flex-col bg-slate-950 text-slate-300 font-sans selection:bg-blue-500/30 overflow-hidden">
       <Header />
       <main className="flex-1 max-w-[1600px] w-full mx-auto p-4 overflow-hidden">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 h-full">
-          
+
           <div className="lg:col-span-3 h-full overflow-hidden hidden lg:block">
             <GameSearchPanel onSelectGame={handleSelectGame} />
           </div>
 
           <div className="lg:col-span-6 h-full flex items-center justify-center overflow-hidden">
-            <BoardArea 
-              game={game} 
-              whitePlayer={gameMetadata?.white} 
+            <BoardArea
+              game={game}
+              whitePlayer={gameMetadata?.white}
               blackPlayer={gameMetadata?.black}
-              orientation={boardOrientation} 
+              orientation={boardOrientation}
               isLoading={isLoadingBoard}
               currentEval={currentEvalScore} // Truyền điểm số hiện tại
+              lastMove={currentMove}
             />
           </div>
 
           <div className="lg:col-span-3 h-full overflow-hidden">
-            <AnalysisPanel 
-              moveHistory={moveHistory} 
+            <AnalysisPanel
+              moveHistory={moveHistory}
               currentMoveIndex={currentMoveIndex}
               onJumpToMove={handleJumpToMove}
               onAnalyzeGame={handleAnalyzeGame} // Truyền hàm xử lý
               isAnalyzing={isAnalyzing}
               analyzeProgress={analyzeProgress}
               isEngineReady={isReady}
-              orientation={boardOrientation} // TRUYỀN THÊM DÒNG NÀY
+              orientation={boardOrientation} 
             />
           </div>
 
